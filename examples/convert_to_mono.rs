@@ -36,7 +36,7 @@ fn mux_into_mono<S, R, W>(
     writer: &mut W,
 ) -> hound::Result<()>
 where
-    S: hound::Sample + std::ops::Add<Output=S> + std::ops::Div<Output=S> + std::convert::TryFrom<i16, Error=E>,
+    S: hound::Sample + std::ops::Add<Output=S> + std::ops::Div<Output=S> + std::convert::From<i16>,
     R: io::Read,
     W: io::Write,
 {
@@ -65,8 +65,8 @@ where
         if mono_buffer.len() >= channel_count as usize {
             // To prevent overflow in the case of integer samples, we divide first then add
             let mono_sample: S = mono_buffer.drain(..).fold(
-                S::try_from(0).unwrap(),
-                |acc, x| acc + (x / S::try_from(channel_count as i16)?)
+                S::from(0),
+                |acc, x| acc + (x / S::from(channel_count as i16))
             );
             mono_sample.write(writer, bit_depth)?;
         }
@@ -77,8 +77,8 @@ where
     if !mono_buffer.is_empty() {
         let remaining_channels = mono_buffer.len();
         let mono_sample: S = mono_buffer.drain(..).fold(
-            S::try_from(0).unwrap(),
-            |acc, x| acc + (x / S::try_from(remaining_channels as i16)?)
+            S::from(0),
+            |acc, x| acc + (x / S::from(remaining_channels as i16))
         );
         mono_sample.write(writer, bit_depth)?;
     }

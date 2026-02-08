@@ -634,10 +634,17 @@ impl<R> WavReader<R>
 
     /// Returns an iterator over all samples.
     ///
-    /// The channel data is interleaved. The iterator is streaming. That is,
-    /// if you call this method once, read a few samples, and call this method
-    /// again, the second iterator will not start again from the beginning of
-    /// the file, it will continue where the first iterator stopped.
+    /// The channel data is interleaved - that is, if the file being read has
+    /// two channels, the first sample will be from the first channel,
+    /// the second sample will be from the second channel, and then the third
+    /// sample will be the first channel again, and so on. If you don't know
+    /// the channel count ahead of time you can use [`WavReader::spec`] and
+    /// [`WavSpec::channels`].
+    ///
+    /// The iterator is streaming - that is, if you call this method once,
+    /// read a few samples, and call this method again, the second iterator
+    /// will not start again from the beginning of the file, it will continue
+    /// where the first iterator stopped.
     ///
     /// The type `S` must have at least `spec().bits_per_sample` bits,
     /// otherwise every iteration will return an error. All bit depths up to

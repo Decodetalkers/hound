@@ -36,54 +36,34 @@ fn mux_into_mono<S, R, W>(
     writer: &mut W,
 ) -> hound::Result<()>
 where
-    S: hound::Sample + std::ops::Add<Output=S> + std::ops::Div<Output=S> + std::convert::From<i16>,
+    S: Copy + hound::Sample + std::ops::AddAssign + std::ops::Div<Output=S> + std::convert::From<i16>,
     R: io::Read,
     W: io::Write,
 {
     let channel_count = reader.spec().channels;
+    let divisor = S::from(channel_count as i16);
     let bit_depth = reader.spec().bits_per_sample;
 
-    // If you know the channel count ahead of time (and are on nightly) you could
-    // consider using `Iterator.array_chunks`.
-    //
-    // Alternatively, if you're OK with reading the entire wav file in, you could
-    // `.collect` into a `Vec` and then use [`Vec::chunks`].
-    //
-    // In our case, we want to be able to deal with any file, so we must account
-    // for an arbitrary amount of channels, as well as stream the output in case
-    // the file is very large, so we use a channel-size buffer to store a sample
-    // for each channel that we can then average to create a mono sample.
-    let mut mono_buffer = Vec::<S>::with_capacity(channel_count as usize);
+    let mut mono_sample = S::from(0);
+    let mut channel_stride_index = 0;
 
     for sample in
         reader.samples::<S>()
     {
         let sample = sample?;
 
-        mono_buffer.push(sample);
-
-        if mono_buffer.len() >= channel_count as usize {
-            // To prevent overflow in the case of integer samples, we divide first then add
-            let mono_sample: S = mono_buffer.drain(..).fold(
-                S::from(0),
-                |acc, x| acc + (x / S::from(channel_count as i16))
-            );
+        if channel_stride_index == channel_count {
             mono_sample.write(writer, bit_depth)?;
+            mono_sample = S::from(0);
+            channel_stride_index = 0;
         }
+
+        mono_sample += sample / divisor;
+        channel_stride_index += 1;
     }
 
-    // Should not really happen if the wav file is well formed, but this will
-    // catch any mismatched samples at the end.
-    if !mono_buffer.is_empty() {
-        let remaining_channels = mono_buffer.len();
-        let mono_sample: S = mono_buffer.drain(..).fold(
-            S::from(0),
-            |acc, x| acc + (x / S::from(remaining_channels as i16))
-        );
-        mono_sample.write(writer, bit_depth)?;
-    }
-
-    Ok(())
+    // Flush the final sample.
+    mono_sample.write(writer, bit_depth)
 }
 
 fn main() -> hound::Result<()> {

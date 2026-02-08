@@ -96,17 +96,16 @@ fn main() {
         ..input_spec
     };
 
-    // Write info to stderr so the result is pipeable
+    // Write info to stderr so the result is pipeable.
     eprintln!(
         "Converting {0} channel {1}Hz {2}bit stream of {3} samples to 1 channel {1}Hz {2}bit stream",
         input_spec.channels, input_spec.sample_rate, input_spec.bits_per_sample, reader.duration()
     );
 
-    // Acquire stdout writer.
     let stdout = std::io::stdout();
     let mut stdout = stdout.lock();
 
-    // Write output header for streaming
+    // Write output header for streaming.
     let header = output_spec.into_header_for_infinite_file();
     stdout.write_all(&header[..]).unwrap();
 

@@ -31,13 +31,12 @@ use std::io::Write;
 /// format to the writer.
 ///
 /// This assumes the wav header has already been written.
-fn mux_into_mono<S, E, R, W>(
+fn mux_into_mono<S, R, W>(
     reader: &mut hound::WavReader<R>,
     writer: &mut W,
-)
+) -> hound::Result<()>
 where
     S: hound::Sample + std::ops::Add<Output=S> + std::ops::Div<Output=S> + std::convert::TryFrom<i16, Error=E>,
-    E: std::fmt::Debug,
     R: io::Read,
     W: io::Write,
 {
@@ -58,17 +57,18 @@ where
 
     for sample in
         reader.samples::<S>()
-        .map(|sample| sample.expect("failed to decode sample from wav stream"))
     {
+        let sample = sample?;
+
         mono_buffer.push(sample);
 
         if mono_buffer.len() >= channel_count as usize {
             // To prevent overflow in the case of integer samples, we divide first then add
             let mono_sample: S = mono_buffer.drain(..).fold(
                 S::try_from(0).unwrap(),
-                |acc, x| acc + (x / S::try_from(channel_count as i16).expect("channel count convertable to sample type"))
+                |acc, x| acc + (x / S::try_from(channel_count as i16)?)
             );
-            mono_sample.write(writer, bit_depth).expect("sample writable");
+            mono_sample.write(writer, bit_depth)?;
         }
     }
 
@@ -78,16 +78,18 @@ where
         let remaining_channels = mono_buffer.len();
         let mono_sample: S = mono_buffer.drain(..).fold(
             S::try_from(0).unwrap(),
-            |acc, x| acc + (x / S::try_from(remaining_channels as i16).expect("channel count convertable to sample type"))
+            |acc, x| acc + (x / S::try_from(remaining_channels as i16)?)
         );
-        mono_sample.write(writer, bit_depth).expect("sample writable");
+        mono_sample.write(writer, bit_depth)?;
     }
+
+    Ok(())
 }
 
-fn main() {
+fn main() -> hound::Result<()> {
     // Open a WavReader using the file provided on the command line.
     let fname = env::args().nth(1).expect("no file given");
-    let mut reader = hound::WavReader::open(fname).expect("failed to open wav reader from file");
+    let mut reader = hound::WavReader::open(fname)?;
     let input_spec = reader.spec();
 
     // The output spec is the same as the input spec, but in mono.
@@ -112,14 +114,15 @@ fn main() {
     // Perform calculations in the same format as the sample format.
     match (input_spec.sample_format, input_spec.bits_per_sample) {
         (hound::SampleFormat::Int, 16) => {
-            mux_into_mono::<i16, _, _, _>(&mut reader, &mut stdout);
+            mux_into_mono::<i16, _, _>(&mut reader, &mut stdout)?;
         }
         (hound::SampleFormat::Int, _) => {
-            mux_into_mono::<i32, _, _, _>(&mut reader, &mut stdout);
+            mux_into_mono::<i32, _, _>(&mut reader, &mut stdout)?;
         }
         (hound::SampleFormat::Float, _) => {
-            mux_into_mono::<f32, _, _, _>(&mut reader, &mut stdout);
+            mux_into_mono::<f32, _, _>(&mut reader, &mut stdout)?;
         }
     }
 
+    Ok(())
 }

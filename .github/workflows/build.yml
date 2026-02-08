@@ -1,0 +1,64 @@
+# This file is generated from build.rcl.
+{
+  "env": {"CARGO_TERM_COLOR": "always", "DEBIAN_FRONTEND": "noninteractive"},
+  "jobs": {
+    "rust_1_40_0": {
+      "name": "Rust 1.40.0",
+      "runs-on": "ubuntu-latest",
+      "steps": [
+        {"uses": "actions/checkout@v4.2.1"},
+        {"name": "Install toolchain", "run": "rustup toolchain install 1.40.0"},
+        {
+          "name": "Install dependencies",
+          "run": "sudo apt update && sudo apt install libasound2-dev pkg-config"
+        },
+        {"name": "Build", "run": "cargo +1.40.0 build --verbose"},
+        {"name": "Test", "run": "cargo +1.40.0 test --verbose"}
+      ]
+    },
+    "rust_1_60_0": {
+      "name": "Rust 1.60.0",
+      "runs-on": "ubuntu-latest",
+      "steps": [
+        {"uses": "actions/checkout@v4.2.1"},
+        {"name": "Install toolchain", "run": "rustup toolchain install 1.60.0"},
+        {
+          "name": "Install dependencies",
+          "run": "sudo apt update && sudo apt install libasound2-dev pkg-config"
+        },
+        {"name": "Build", "run": "cargo +1.60.0 build --verbose"},
+        {"name": "Test", "run": "cargo +1.60.0 test --verbose"}
+      ]
+    },
+    "rust_1_80_0": {
+      "name": "Rust 1.80.0",
+      "runs-on": "ubuntu-latest",
+      "steps": [
+        {"uses": "actions/checkout@v4.2.1"},
+        {"name": "Install toolchain", "run": "rustup toolchain install 1.80.0"},
+        {
+          "name": "Install dependencies",
+          "run": "sudo apt update && sudo apt install libasound2-dev pkg-config"
+        },
+        {"name": "Build", "run": "cargo +1.80.0 build --verbose"},
+        {"name": "Test", "run": "cargo +1.80.0 test --verbose"}
+      ]
+    },
+    "rust_beta": {
+      "name": "Rust beta",
+      "runs-on": "ubuntu-latest",
+      "steps": [
+        {"uses": "actions/checkout@v4.2.1"},
+        {"name": "Install toolchain", "run": "rustup toolchain install beta"},
+        {
+          "name": "Install dependencies",
+          "run": "sudo apt update && sudo apt install libasound2-dev pkg-config"
+        },
+        {"name": "Build", "run": "cargo +beta build --verbose"},
+        {"name": "Test", "run": "cargo +beta test --verbose"}
+      ]
+    }
+  },
+  "name": "Build",
+  "on": {"pull_request": {"branches": ["release"]}, "push": {"branches": ["*"]}}
+}

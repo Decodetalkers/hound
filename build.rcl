@@ -1,0 +1,67 @@
+// There are repetitive configuration files for CI and Rustup, we
+// deduplicate this using RCL version 0.12.0. <https://github.com/ruuda/rcl>
+// Rebuild the files by running `rcl build`.
+
+// The minimum supported Rust version (MSRV).
+let msrv = "1.40.0";
+
+// All of the Rust versions that we want to test on CI.
+// We pick the MSRV, beta, and some in between.
+let rust_versions = [msrv, "1.60.0", "1.80.0", "beta"];
+
+let banner = "# This file is generated from build.rcl.";
+
+let gha_steps = rust_version => [
+  { uses = "actions/checkout@v4.2.1" },
+  {
+    name = "Install toolchain",
+    run = f"rustup toolchain install {rust_version}",
+  },
+  {
+    name = "Install dependencies",
+    run = "sudo apt update && sudo apt install libasound2-dev pkg-config",
+  },
+  for cmd in ["Build", "Test"]:
+  {
+    name = cmd,
+    run = f"cargo +{rust_version} {cmd.to_lowercase()} --verbose",
+  },
+];
+
+let github_actions_config = {
+  name = "Build",
+  on = {
+    push = { branches = ["*"] },
+    pull_request = { branches = ["release"] },
+  },
+  env = {
+    CARGO_TERM_COLOR = "always",
+    DEBIAN_FRONTEND = "noninteractive",
+  },
+  jobs = {
+    for rust_version in rust_versions:
+    // Dots are not allowed in job names.
+    let job_name = f"rust_{rust_version.replace(" ", "_").replace(".", "_")}";
+    job_name: {
+      name = f"Rust {rust_version}",
+      runs-on = "ubuntu-latest",
+      steps = gha_steps(rust_version),
+    }
+  },
+};
+
+{
+  ".github/workflows/build.yml": {
+    banner = banner,
+    format = "json",
+    contents = github_actions_config,
+  },
+
+  "rust-toolchain.toml": {
+    banner = banner,
+    format = "toml",
+    // For local development, we test with the MSRV by default, to not
+    // accidentally break things.
+    contents = { toolchain = { channel = msrv } },
+  },
+}

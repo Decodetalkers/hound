@@ -19,8 +19,8 @@ use std::{
 
 use clap::Parser;
 use cpal::{
-    traits::{DeviceTrait, HostTrait, StreamTrait},
     Error, ErrorKind, FromSample, HostId, Sample, SampleFormat, SupportedStreamConfig,
+    traits::{DeviceTrait, HostTrait, StreamTrait},
 };
 
 #[derive(Parser, Debug)]
@@ -65,19 +65,10 @@ fn main() -> Result<(), anyhow::Error> {
         target_os = "netbsd"
     ))]
     {
-        #[cfg(feature = "jack")]
-        {
-            jack_host_id = Ok(HostId::Jack);
-        }
+        jack_host_id = Ok(HostId::Jack);
 
-        #[cfg(feature = "pulseaudio")]
-        {
-            pulseaudio_host_id = Ok(HostId::PulseAudio);
-        }
-        #[cfg(feature = "pipewire")]
-        {
-            pipewire_host_id = Ok(HostId::PipeWire);
-        }
+        pulseaudio_host_id = Ok(HostId::PulseAudio);
+        pipewire_host_id = Ok(HostId::PipeWire);
     }
 
     // Manually check for flags. Can be passed through cargo with -- e.g.
@@ -164,7 +155,7 @@ fn main() -> Result<(), anyhow::Error> {
         sample_format => {
             return Err(anyhow::Error::msg(format!(
                 "Unsupported sample format '{sample_format}'"
-            )))
+            )));
         }
     };
 

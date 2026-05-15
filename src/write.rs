@@ -579,7 +579,6 @@ where
     pub fn is_empty(&self) -> bool {
         self.data_bytes_written == 0
     }
-
 }
 
 impl<W> Drop for WavWriter<W>
@@ -607,7 +606,7 @@ fn read_append<W: io::Read + io::Seek>(mut reader: &mut W) -> Result<(WavSpecEx,
 
     // Record the position of the data chunk length, so we can overwrite it
     // later.
-    let data_len_offset = reader.stream_position()? as u32 - 4;
+    let data_len_offset = reader.seek(io::SeekFrom::Current(0))? as u32 - 4;
 
     let spec = spec_ex.spec;
     let num_samples = data_len / spec_ex.bytes_per_sample as u32;

@@ -364,7 +364,7 @@ pub struct WavSpecEx {
 /// The error type for operations on `WavReader` and `WavWriter`.
 #[derive(Debug)]
 pub enum Error {
-    /// An IO error occured in the underlying reader or writer.
+    /// An IO error occurred in the underlying reader or writer.
     IoError(io::Error),
     /// Ill-formed WAVE data was encountered.
     FormatError(&'static str),

@@ -173,7 +173,7 @@ where
 
     /// The number of bytes written to the data section.
     ///
-    /// This is an `u32` because WAVE cannot accomodate more data.
+    /// This is an `u32` because WAVE cannot accommodate more data.
     data_bytes_written: u32,
 
     /// Whether the header has been finalized.

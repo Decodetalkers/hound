@@ -11,96 +11,205 @@
 // limitations under the License.
 
 // This example shows how to play a wav file using the cpal crate.
+use std::{
+    fs::File,
+    io::BufWriter,
+    sync::{Arc, Mutex},
+};
 
-extern crate hound;
-extern crate cpal;
+use clap::Parser;
+use cpal::{
+    traits::{DeviceTrait, HostTrait, StreamTrait},
+    Error, ErrorKind, FromSample, HostId, Sample, SampleFormat, SupportedStreamConfig,
+};
 
-use std::env;
-use std::thread;
+#[derive(Parser, Debug)]
+#[command(version, about = "CPAL record_wav example", long_about = None)]
+struct Opt {
+    /// The audio device to use.
+    #[arg(short, long)]
+    device: Option<String>,
 
-fn main() {
-    // Make a WavReader that reads the file provided as program argument.
-    let fname = env::args().nth(1).expect("no file given");
-    let mut reader = hound::WavReader::open(fname).unwrap();
-    let spec = reader.spec();
+    /// How long to record, in seconds
+    #[arg(long, default_value_t = 3)]
+    duration: u64,
 
-    let endpoint = cpal::get_default_endpoint().unwrap();
+    /// Use the JACK host. Requires `--features jack`.
+    #[arg(long, default_value_t = false)]
+    jack: bool,
 
-    // Pick a playback format supported by the endpoint, which matches the spec
-    // of the wav file.
-    let format = endpoint.get_supported_formats_list().unwrap()
-                         .filter(|f| matches_format(f, &spec))
-                         .next()
-                         .expect("no supported playback format");
+    /// Use the PulseAudio host. Requires `--features pulseaudio`.
+    #[arg(long, default_value_t = false)]
+    pulseaudio: bool,
 
-    // A voice in cpal is used for playback.
-    let mut voice = cpal::Voice::new(&endpoint, &format).unwrap();
+    /// Use the Pipewire host. Requires `--features pipewire`
+    #[arg(long, default_value_t = false)]
+    pipewire: bool,
+}
 
-    let mut samples_left = reader.len() as usize;
+fn main() -> Result<(), anyhow::Error> {
+    let opt = Opt::parse();
 
-    let mut append_data = |voice: &mut cpal::Voice| {
-        match voice.append_data(samples_left) {
-            cpal::UnknownTypeBuffer::I16(mut wrapped_buf) => {
-                // We cannot rely on Rust's autoderef here, because we want to
-                // call .len() on the buffer, which would cause a deref() of the
-                // buffer, not a deref_mut(), and cpal's deref() implementation
-                // is to panic.
-                let buf: &mut [i16] = &mut *wrapped_buf;
-                for (dst, src) in buf.iter_mut().zip(reader.samples::<i16>()) {
-                    *dst = src.unwrap();
-                }
-                samples_left -= buf.len();
-            }
-            cpal::UnknownTypeBuffer::F32(mut wrapped_buf) => {
-                let buf: &mut [f32] = &mut *wrapped_buf;
-                for (dst, src) in buf.iter_mut().zip(reader.samples::<f32>()) {
-                    *dst = src.unwrap();
-                }
-                samples_left -= buf.len();
-            }
-            _ => unreachable!()
+    // Jack/PulseAudio support must be enabled at compile time, and is
+    // only available on some platforms.
+    #[allow(unused_mut, unused_assignments)]
+    let mut jack_host_id: Result<HostId, Error> = Err(ErrorKind::HostUnavailable.into());
+    #[allow(unused_mut, unused_assignments)]
+    let mut pulseaudio_host_id: Result<HostId, Error> = Err(ErrorKind::HostUnavailable.into());
+    #[allow(unused_mut, unused_assignments)]
+    let mut pipewire_host_id: Result<HostId, Error> = Err(ErrorKind::HostUnavailable.into());
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "netbsd"
+    ))]
+    {
+        #[cfg(feature = "jack")]
+        {
+            jack_host_id = Ok(HostId::Jack);
         }
 
-        // Loop again if there are samples left.
-        samples_left > 0
-    };
-
-    // The voice must have some data before playing for the first time.
-    let mut has_more = append_data(&mut voice);
-    voice.play();
-
-    // Then we keep providing new data until the end of the audio.
-    while has_more {
-        has_more = append_data(&mut voice);
+        #[cfg(feature = "pulseaudio")]
+        {
+            pulseaudio_host_id = Ok(HostId::PulseAudio);
+        }
+        #[cfg(feature = "pipewire")]
+        {
+            pipewire_host_id = Ok(HostId::PipeWire);
+        }
     }
 
-    // Wait for playback to complete.
-    while voice.underflowed() {
-        thread::yield_now();
+    // Manually check for flags. Can be passed through cargo with -- e.g.
+    // cargo run --release --example record_wav --features jack -- --jack
+    let host = if opt.jack {
+        jack_host_id
+            .and_then(cpal::host_from_id)
+            .expect("make sure `--features jack` is specified, and the platform is supported")
+    } else if opt.pulseaudio {
+        pulseaudio_host_id
+            .and_then(cpal::host_from_id)
+            .expect("make sure `--features pulseaudio` is specified, and the platform is supported")
+    } else if opt.pipewire {
+        pipewire_host_id
+            .and_then(cpal::host_from_id)
+            .expect("make sure `--features pipewire` is specified, and the platform is supported")
+    } else {
+        cpal::default_host()
+    };
+
+    // Set up the input device and stream with the default input config.
+    let device = if let Some(device) = opt.device {
+        let id = &device.parse().expect("failed to parse input device id");
+        host.device_by_id(id)
+    } else {
+        host.default_input_device()
+    }
+    .expect("failed to find input device");
+
+    println!("Input device: {}", device.id()?);
+
+    let config = if device.supports_input() {
+        device.default_input_config()
+    } else {
+        device.default_output_config()
+    }
+    .expect("Failed to get default input/output config");
+    println!("Default input/output config: {config:?}");
+
+    // The WAV file we're recording to.
+    const PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/recorded.wav");
+    let spec = wav_spec_from_config(&config);
+    let writer = hound::WavWriter::create(PATH, spec)?;
+    let writer = Arc::new(Mutex::new(Some(writer)));
+
+    // A flag to indicate that recording is in progress.
+    println!("Begin recording...");
+
+    // Run the input stream on a separate thread.
+    let writer_2 = writer.clone();
+
+    let err_fn = move |err: Error| match err.kind() {
+        ErrorKind::DeviceChanged | ErrorKind::Xrun | ErrorKind::RealtimeDenied => {
+            eprintln!("{err}")
+        }
+        _ => eprintln!("Stream error: {err}"),
+    };
+
+    let stream = match config.sample_format() {
+        SampleFormat::I8 => device.build_input_stream(
+            config.into(),
+            move |data, _: &_| write_input_data::<i8, i8>(data, &writer_2),
+            err_fn,
+            None,
+        )?,
+        SampleFormat::I16 => device.build_input_stream(
+            config.into(),
+            move |data, _: &_| write_input_data::<i16, i16>(data, &writer_2),
+            err_fn,
+            None,
+        )?,
+        SampleFormat::I32 => device.build_input_stream(
+            config.into(),
+            move |data, _: &_| write_input_data::<i32, i32>(data, &writer_2),
+            err_fn,
+            None,
+        )?,
+        SampleFormat::F32 => device.build_input_stream(
+            config.into(),
+            move |data, _: &_| write_input_data::<f32, f32>(data, &writer_2),
+            err_fn,
+            None,
+        )?,
+        sample_format => {
+            return Err(anyhow::Error::msg(format!(
+                "Unsupported sample format '{sample_format}'"
+            )))
+        }
+    };
+
+    stream.play()?;
+
+    // Let recording go for roughly three seconds.
+    std::thread::sleep(std::time::Duration::from_secs(opt.duration));
+    drop(stream);
+    writer.lock().unwrap().take().unwrap().finalize()?;
+    println!("Recording {PATH} complete!");
+    Ok(())
+}
+
+fn sample_format(format: SampleFormat) -> hound::SampleFormat {
+    if format.is_dsd() {
+        panic!("DSD formats cannot be written to WAV files");
+    } else if format.is_float() {
+        hound::SampleFormat::Float
+    } else {
+        hound::SampleFormat::Int
     }
 }
 
-fn matches_format(format: &cpal::Format, spec: &hound::WavSpec) -> bool {
-    let cpal::SamplesRate(sample_rate) = format.samples_rate;
-    if sample_rate != spec.sample_rate {
-        return false
+fn wav_spec_from_config(config: &SupportedStreamConfig) -> hound::WavSpec {
+    hound::WavSpec {
+        channels: config.channels() as _,
+        sample_rate: config.sample_rate() as _,
+        bits_per_sample: (config.sample_format().sample_size() * 8) as _,
+        sample_format: sample_format(config.sample_format()),
     }
+}
 
-    if format.channels.len() != spec.channels as usize {
-        return false
+type WavWriterHandle = Arc<Mutex<Option<hound::WavWriter<BufWriter<File>>>>>;
+
+fn write_input_data<T, U>(input: &[T], writer: &WavWriterHandle)
+where
+    T: Sample,
+    U: Sample + hound::Sample + FromSample<T>,
+{
+    if let Ok(mut guard) = writer.try_lock() {
+        if let Some(writer) = guard.as_mut() {
+            for &sample in input.iter() {
+                let sample: U = U::from_sample(sample);
+                writer.write_sample(sample).ok();
+            }
+        }
     }
-
-    let data_type = match (spec.bits_per_sample, spec.sample_format) {
-        (16, hound::SampleFormat::Int) => Some(cpal::SampleFormat::I16),
-        (32, hound::SampleFormat::Float) => Some(cpal::SampleFormat::F32),
-        _ => None
-    };
-
-    if Some(format.data_type) != data_type {
-        return false
-    }
-
-    // If the sample rate, channel count, and sample format match, then we can
-    // play back the file in this format.
-    true
 }

@@ -13,7 +13,9 @@ documentation = "https://docs.rs/hound"
 edition = "2024"
 
 [dev-dependencies]
+anyhow = "1.0.102"
+clap = { version = "4.6", features = ["derive"] }
 # An older version of cpal, but newer versions depend on the futures library,
 # which is incompatible with the version of Rust that Hound guarantees to
 # support.
-cpal = "0.2.12"
+cpal = { git = "https://github.com/RustAudio/cpal" }

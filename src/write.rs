@@ -91,7 +91,7 @@ where
     #[inline(always)]
     fn write_le_u24(&mut self, x: u32) -> io::Result<()> {
         let mut buf = [0u8; 3];
-        buf[0] = ((x >> 00) & 0xff) as u8;
+        buf[0] = (x & 0xff) as u8;
         buf[1] = ((x >> 08) & 0xff) as u8;
         buf[2] = ((x >> 16) & 0xff) as u8;
         self.write_all(&buf)
@@ -105,7 +105,7 @@ where
     #[inline(always)]
     fn write_le_u32(&mut self, x: u32) -> io::Result<()> {
         let mut buf = [0u8; 4];
-        buf[0] = ((x >> 00) & 0xff) as u8;
+        buf[0] = (x & 0xff) as u8;
         buf[1] = ((x >> 08) & 0xff) as u8;
         buf[2] = ((x >> 16) & 0xff) as u8;
         buf[3] = ((x >> 24) & 0xff) as u8;
@@ -209,8 +209,8 @@ where
     /// returned.
     pub fn new(writer: W, spec: WavSpec) -> Result<WavWriter<W>> {
         let spec_ex = WavSpecEx {
-            spec: spec,
-            bytes_per_sample: (spec.bits_per_sample + 7) / 8,
+            spec,
+            bytes_per_sample: spec.bits_per_sample.div_ceil(8),
         };
         WavWriter::new_with_spec_ex(writer, spec_ex)
     }
@@ -238,9 +238,9 @@ where
         };
 
         let mut writer = WavWriter {
-            spec: spec,
+            spec,
             bytes_per_sample: spec_ex.bytes_per_sample,
-            writer: writer,
+            writer,
             data_bytes_written: 0,
             sample_writer_buffer: Vec::new(),
             finalized: false,
@@ -390,7 +390,7 @@ where
 
         // The field wBitsPerSample. This is actually the size of the
         // container, so this is a multiple of 8.
-        buffer.write_le_u16(self.bytes_per_sample as u16 * 8)?;
+        buffer.write_le_u16(self.bytes_per_sample * 8)?;
         // The field cbSize, the number of remaining bytes in the struct.
         buffer.write_le_u16(22)?;
         // The field wValidBitsPerSample, the real number of bits per sample.
@@ -502,7 +502,7 @@ where
         // Signal error if the last sample was not finished, but do so after
         // everything has been written, so that no data is lost, even though
         // the file is now ill-formed.
-        if (self.data_bytes_written / self.bytes_per_sample as u32) % self.spec.channels as u32 != 0
+        if !(self.data_bytes_written / self.bytes_per_sample as u32).is_multiple_of(self.spec.channels as u32)
         {
             Err(Error::UnfinishedSample)
         } else {
@@ -528,7 +528,7 @@ where
     /// It is not necessary to call `finalize()` directly after `flush()`, if no
     /// samples have been written after flushing.
     pub fn flush(&mut self) -> Result<()> {
-        let current_pos = self.writer.seek(io::SeekFrom::Current(0))?;
+        let current_pos = self.writer.stream_position()?;
         self.update_header()?;
         self.writer.flush()?;
         self.writer.seek(io::SeekFrom::Start(current_pos))?;
@@ -604,7 +604,7 @@ fn read_append<W: io::Read + io::Seek>(mut reader: &mut W) -> Result<(WavSpecEx,
 
     // Record the position of the data chunk length, so we can overwrite it
     // later.
-    let data_len_offset = reader.seek(io::SeekFrom::Current(0))? as u32 - 4;
+    let data_len_offset = reader.stream_position()? as u32 - 4;
 
     let spec = spec_ex.spec;
     let num_samples = data_len / spec_ex.bytes_per_sample as u32;
@@ -633,7 +633,7 @@ fn read_append<W: io::Read + io::Seek>(mut reader: &mut W) -> Result<(WavSpecEx,
     // The number of samples must be a multiple of the number of channels,
     // otherwise the last inter-channel sample would not have data for all
     // channels.
-    if num_samples % spec_ex.spec.channels as u32 != 0 {
+    if !num_samples.is_multiple_of(spec_ex.spec.channels as u32) {
         return Err(Error::FormatError("invalid data chunk length"));
     }
 
@@ -687,7 +687,7 @@ impl WavWriter<io::BufWriter<fs::File>> {
             data_bytes_written: data_len,
             sample_writer_buffer: Vec::new(),
             finalized: false,
-            data_len_offset: data_len_offset,
+            data_len_offset,
         };
 
         Ok(writer)
@@ -716,11 +716,11 @@ where
         let writer = WavWriter {
             spec: spec_ex.spec,
             bytes_per_sample: spec_ex.bytes_per_sample,
-            writer: writer,
+            writer,
             data_bytes_written: data_len,
             sample_writer_buffer: Vec::new(),
             finalized: false,
-            data_len_offset: data_len_offset,
+            data_len_offset,
         };
 
         Ok(writer)

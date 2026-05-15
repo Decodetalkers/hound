@@ -168,7 +168,7 @@ fn verify_narrow_to_i16() {
 /// Tries to cast the sample to a 24-bit signed integer, returning an error on overflow.
 #[inline(always)]
 fn narrow_to_i24(x: i32) -> Result<i32> {
-    if x < -(1 << 23) || x > (1 << 23) - 1 {
+    if !(-(1 << 23)..=(1 << 23) - 1).contains(&x) {
         Err(Error::TooWide)
     } else {
         Ok(x)

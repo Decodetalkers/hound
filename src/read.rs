@@ -83,7 +83,7 @@ impl<R> ReadExt for R
             if progress > 0 {
                 n += progress;
             } else {
-                return Err(io::Error::new(io::ErrorKind::Other, "Failed to read enough bytes."));
+                return Err(io::Error::other("Failed to read enough bytes."));
             }
         }
         Ok(())
@@ -103,7 +103,7 @@ impl<R> ReadExt for R
             if progress > 0 {
                 n_read += progress;
             } else {
-                return Err(io::Error::new(io::ErrorKind::Other, "Failed to read enough bytes."));
+                return Err(io::Error::other("Failed to read enough bytes."));
             }
         }
         Ok(())
@@ -183,7 +183,7 @@ impl<R> ReadExt for R
         let mut buf = [0u8; 4];
         self.read_into(&mut buf)?;
         Ok((buf[3] as u32) << 24 | (buf[2] as u32) << 16 |
-           (buf[1] as u32) << 8  | (buf[0] as u32) << 0)
+           (buf[1] as u32) << 8  | ((buf[0] as u32)))
     }
 
     #[inline(always)]
@@ -349,7 +349,7 @@ impl<R> WavReader<R>
             _ => ChunkKind::Unknown,
         };
 
-        Ok(ChunkHeader { kind: kind, len: len })
+        Ok(ChunkHeader { kind, len })
     }
 
     /// Reads the fmt chunk of the file, returns the information it provides.
@@ -436,7 +436,7 @@ impl<R> WavReader<R>
         let mut spec = WavSpec {
             channels: n_channels,
             sample_rate: n_samples_per_sec,
-            bits_per_sample: bits_per_sample,
+            bits_per_sample,
             sample_format: SampleFormat::Int,
         };
 
@@ -458,8 +458,8 @@ impl<R> WavReader<R>
         };
 
         Ok(WavSpecEx {
-            spec: spec,
-            bytes_per_sample: bytes_per_sample,
+            spec,
+            bytes_per_sample,
         })
     }
 
@@ -613,16 +613,16 @@ impl<R> WavReader<R>
         // The number of samples must be a multiple of the number of channels,
         // otherwise the last inter-channel sample would not have data for all
         // channels.
-        if num_samples % spec_ex.spec.channels as u32 != 0 {
+        if !num_samples.is_multiple_of(spec_ex.spec.channels as u32) {
             return Err(Error::FormatError("invalid data chunk length"));
         }
 
         let wav_reader = WavReader {
             spec: spec_ex.spec,
             bytes_per_sample: spec_ex.bytes_per_sample,
-            num_samples: num_samples,
+            num_samples,
             samples_read: 0,
-            reader: reader,
+            reader,
         };
 
         Ok(wav_reader)
@@ -742,7 +742,7 @@ fn iter_next<R, S>(reader: &mut WavReader<R>) -> Option<Result<S>>
                                   reader.spec.sample_format,
                                   reader.bytes_per_sample,
                                   reader.spec.bits_per_sample);
-        Some(sample.map_err(Error::from))
+        Some(sample)
     } else {
         None
     }
@@ -760,11 +760,11 @@ impl<'wr, R, S> Iterator for WavSamples<'wr, R, S>
     type Item = Result<S>;
 
     fn next(&mut self) -> Option<Result<S>> {
-        iter_next(&mut self.reader)
+        iter_next(self.reader)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        iter_size_hint(&self.reader)
+        iter_size_hint(self.reader)
     }
 }
 

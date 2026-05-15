@@ -98,7 +98,7 @@ pub trait Sample: Sized {
     /// This does not change the value of the sample, it only casts it. The
     /// value is assumed to fit within the range. This is not verified,
     /// truncation may occur.
-    fn as_i16(self) -> i16;
+    fn as_i16(&self) -> i16;
 }
 
 /// Converts an unsigned integer in the range 0-255 to a signed one in the range -128-127.
@@ -130,7 +130,6 @@ fn u8_sign_conversion_is_bijective() {
 /// Tries to cast the sample to an 8-bit signed integer, returning an error on overflow.
 #[inline(always)]
 fn narrow_to_i8(x: i32) -> Result<i8> {
-    use std::i8;
     if x < i8::MIN as i32 || x > i8::MAX as i32 {
         Err(Error::TooWide)
     } else {
@@ -149,7 +148,6 @@ fn verify_narrow_to_i8() {
 /// Tries to cast the sample to a 16-bit signed integer, returning an error on overflow.
 #[inline(always)]
 fn narrow_to_i16(x: i32) -> Result<i16> {
-    use std::i16;
     if x < i16::MIN as i32 || x > i16::MAX as i32 {
         Err(Error::TooWide)
     } else {
@@ -200,8 +198,8 @@ impl Sample for i8 {
     }
 
     #[inline(always)]
-    fn as_i16(self) -> i16 {
-        self as i16
+    fn as_i16(&self) -> i16 {
+        *self as i16
     }
 
     fn read<R: io::Read>(reader: &mut R, fmt: SampleFormat, bytes: u16, bits: u16) -> Result<i8> {
@@ -234,8 +232,8 @@ impl Sample for i16 {
     }
 
     #[inline(always)]
-    fn as_i16(self) -> i16 {
-        self
+    fn as_i16(&self) -> i16 {
+        *self
     }
 
     fn read<R: io::Read>(reader: &mut R, fmt: SampleFormat, bytes: u16, bits: u16) -> Result<i16> {
@@ -269,8 +267,8 @@ impl Sample for i32 {
     }
 
     #[inline(always)]
-    fn as_i16(self) -> i16 {
-        self as i16
+    fn as_i16(&self) -> i16 {
+        *self as i16
     }
 
     fn read<R: io::Read>(reader: &mut R, fmt: SampleFormat, bytes: u16, bits: u16) -> Result<i32> {
@@ -302,7 +300,7 @@ impl Sample for f32 {
         }
     }
 
-    fn as_i16(self) -> i16 {
+    fn as_i16(&self) -> i16 {
         panic!("Calling as_i16 with an f32 is invalid.");
     }
 

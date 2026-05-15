@@ -88,6 +88,7 @@ where
         self.write_le_u32((x as u32) & 0x00_ff_ff_ff)
     }
 
+    #[allow(clippy::zero_prefixed_literal)]
     #[inline(always)]
     fn write_le_u24(&mut self, x: u32) -> io::Result<()> {
         let mut buf = [0u8; 3];
@@ -102,6 +103,7 @@ where
         self.write_le_u32(x as u32)
     }
 
+    #[allow(clippy::zero_prefixed_literal)]
     #[inline(always)]
     fn write_le_u32(&mut self, x: u32) -> io::Result<()> {
         let mut buf = [0u8; 4];
@@ -253,13 +255,7 @@ where
         // Hound can only write those bit depths. If something else was
         // requested, fail early, rather than writing a header but then failing
         // at the first sample.
-        let supported = match spec.bits_per_sample {
-            8 => true,
-            16 => true,
-            24 => true,
-            32 => true,
-            _ => false,
-        };
+        let supported = matches!(spec.bits_per_sample, 8 | 16 | 24 | 32);
 
         if !supported {
             return Err(Error::Unsupported);
@@ -502,7 +498,8 @@ where
         // Signal error if the last sample was not finished, but do so after
         // everything has been written, so that no data is lost, even though
         // the file is now ill-formed.
-        if !(self.data_bytes_written / self.bytes_per_sample as u32).is_multiple_of(self.spec.channels as u32)
+        if !(self.data_bytes_written / self.bytes_per_sample as u32)
+            .is_multiple_of(self.spec.channels as u32)
         {
             Err(Error::UnfinishedSample)
         } else {
@@ -577,6 +574,12 @@ where
     pub fn len(&self) -> u32 {
         self.data_bytes_written / self.bytes_per_sample as u32
     }
+
+    /// Return if the data is empty
+    pub fn is_empty(&self) -> bool {
+        self.data_bytes_written == 0
+    }
+
 }
 
 impl<W> Drop for WavWriter<W>
@@ -618,13 +621,10 @@ fn read_append<W: io::Read + io::Seek>(mut reader: &mut W) -> Result<(WavSpecEx,
 
     // Hound cannot read or write other bit depths than those, so rather
     // than refusing to write later, fail early.
-    let supported = match (spec_ex.bytes_per_sample, spec.bits_per_sample) {
-        (1, 8) => true,
-        (2, 16) => true,
-        (3, 24) => true,
-        (4, 32) => true,
-        _ => false,
-    };
+    let supported = matches!(
+        (spec_ex.bytes_per_sample, spec.bits_per_sample),
+        (1, 8) | (2, 16) | (3, 24) | (4, 32)
+    );
 
     if !supported {
         return Err(Error::Unsupported);
@@ -801,6 +801,8 @@ impl<'parent, W: io::Write + io::Seek> SampleWriter16<'parent, W> {
         }
     }
 
+    /// # Safety
+    ///
     /// Like `write_sample()`, but does not perform a bounds check when writing
     /// to the internal buffer.
     ///
